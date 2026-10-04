@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Ruby Darkrose — Light Show</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Pirata+One&family=Cormorant+Garamond:ital,wght@0,500;1,400;1,600&display=swap" rel="stylesheet">
+<script src="https://w.soundcloud.com/player/api.js"></script>
+<style>
+:root {
+  --black-cherry: #14060b;
+  --oxblood: #5a0f1f;
+  --rose: #c2183f;
+  --ember: #ff5a6e;
+  --petal: #f1d6dc;
+  --bruise: #3b1240;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; background: var(--black-cherry); color: var(--petal); overflow: hidden; }
+body { font-family: "Cormorant Garamond", Georgia, "Times New Roman", serif; }
+
+canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+
+.dedication {
+  position: fixed; top: calc(env(safe-area-inset-top, 0px) + 20px); left: 0; right: 0;
+  text-align: center; font-style: italic; font-size: 1.15rem; opacity: .75; pointer-events: none;
+}
+
+.now {
+  position: fixed; left: 0; right: 0;
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 150px);
+  text-align: center; pointer-events: none; padding: 0 20px;
+}
+.now .artist { font-family: "Pirata One", "Old English Text MT", Georgia, serif; font-size: clamp(1.6rem, 5vw, 2.6rem); color: var(--ember); letter-spacing: .02em; }
+.now .title { font-style: italic; font-weight: 600; font-size: clamp(1.2rem, 3.6vw, 1.7rem); margin-top: 2px; transition: opacity .6s; }
+
+.player {
+  position: fixed; left: 50%; transform: translateX(-50%);
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 16px);
+  width: min(640px, calc(100% - 24px)); height: 120px;
+  border-radius: 6px; overflow: hidden;
+  box-shadow: 0 0 40px rgba(194, 24, 63, .35);
+  transition: opacity .6s;
+}
+.player iframe { width: 100%; height: 100%; border: 0; }
+body.hide-ui .player, body.hide-ui .controls, body.hide-ui .dedication { opacity: 0; }
+body.hide-ui .player:hover { opacity: 1; }
+
+.controls {
+  position: fixed; top: calc(env(safe-area-inset-top, 0px) + 14px); right: 14px;
+  display: flex; gap: 8px; transition: opacity .6s;
+}
+.controls button {
+  font: inherit; font-size: .95rem; color: var(--petal);
+  background: rgba(20, 6, 11, .6); border: 1px solid rgba(241, 214, 220, .25);
+  padding: 6px 12px; border-radius: 999px; cursor: pointer;
+}
+.controls button[aria-pressed="true"] { border-color: var(--ember); color: var(--ember); }
+button:focus-visible { outline: 2px solid var(--ember); outline-offset: 3px; }
+
+.gate {
+  position: fixed; inset: 0; display: grid; place-items: center; text-align: center;
+  background: radial-gradient(circle at 50% 45%, var(--bruise) 0%, var(--black-cherry) 70%);
+  z-index: 10; padding: 24px; transition: opacity .9s;
+}
+.gate.gone { opacity: 0; pointer-events: none; }
+.gate h1 { font-family: "Pirata One", "Old English Text MT", Georgia, serif; font-weight: 400; font-size: clamp(2.6rem, 10vw, 5rem); color: var(--ember); line-height: 1; }
+.gate p { font-style: italic; font-size: 1.25rem; margin: 14px 0 28px; max-width: 32ch; }
+.gate button {
+  font: inherit; font-size: 1.3rem; font-style: italic; color: var(--petal);
+  background: var(--rose); border: 0; padding: 12px 34px; border-radius: 999px; cursor: pointer;
+  box-shadow: 0 0 30px rgba(255, 90, 110, .5);
+}
+</style>
+</head>
+<body>
+
+<canvas id="c" aria-hidden="true"></canvas>
+
+<div class="dedication" id="dedication"></div>
+
+<div class="now" aria-live="polite">
+  <div class="artist">Ruby Darkrose</div>
+  <div class="title" id="title">&nbsp;</div>
+</div>
+
+<div class="controls">
+  <button id="micBtn" aria-pressed="false" title="Lights follow the music through your microphone">Sync to sound</button>
+  <button id="hideBtn" aria-pressed="false">Hide player</button>
+  <button id="fsBtn">Full screen</button>
+</div>
+
+<div class="player"><iframe id="sc" allow="autoplay" title="Ruby Darkrose on SoundCloud"></iframe></div>
+
+<div class="gate" id="gate">
+  <div>
+    <h1>Ruby Darkrose</h1>
+    <p id="gateNote"></p>
+    <button id="startBtn">Start the show</button>
+  </div>
+</div>
+
+<script>
+/* ================= CONFIG — edit these ================= */
+const CONFIG = {
+  // Paste your SoundCloud playlist link, or her profile link to play all her tracks.
+  soundcloudUrl: "https://soundcloud.com/ruby-darkrose",
+  // Shows at the top of the page and on the start screen.
+  dedication: "A small thank-you for all the things you do that don't always get noticed. Press play and enjoy."
+};
+/* ======================================================= */
+
+const $ = id => document.getElementById(id);
+$("dedication").textContent = CONFIG.dedication;
+$("gateNote").textContent = CONFIG.dedication;
+
+/* ---------- SoundCloud player ---------- */
+const iframe = $("sc");
+iframe.src = "https://w.soundcloud.com/player/?url=" + encodeURIComponent(CONFIG.soundcloudUrl) +
+  "&color=%23c2183f&auto_play=false&hide_related=true&show_comments=false&show_user=true&show_reposts=false&visual=false";
+
+let widget = null, playing = false;
+const palettes = [
+  { a: 345, b: 290 }, // crimson + violet
+  { a: 355, b: 15 },  // blood red + ember
+  { a: 330, b: 275 }, // magenta + bruise
+  { a: 0,   b: 320 }, // pure red + rose
+  { a: 310, b: 350 }  // plum + scarlet
+];
+let pal = palettes[0];
+
+function updateTitle() {
+  if (!widget) return;
+  widget.getCurrentSound(s => {
+    if (!s) return;
+    $("title").textContent = s.title;
+    let h = 0; for (const ch of s.title) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+    pal = palettes[h % palettes.length];
+  });
+}
+
+function initWidget() {
+  if (!window.SC) return;
+  widget = SC.Widget(iframe);
+  widget.bind(SC.Widget.Events.READY, updateTitle);
+  widget.bind(SC.Widget.Events.PLAY, () => { playing = true; updateTitle(); });
+  widget.bind(SC.Widget.Events.PAUSE, () => { playing = false; });
+  widget.bind(SC.Widget.Events.FINISH, () => { playing = false; });
+}
+iframe.addEventListener("load", initWidget);
+
+/* ---------- Microphone sync (optional) ---------- */
+let analyser = null, freq = null, micOn = false, micStream = null;
+async function toggleMic() {
+  if (micOn) {
+    micStream && micStream.getTracks().forEach(t => t.stop());
+    micOn = false; analyser = null;
+    $("micBtn").setAttribute("aria-pressed", "false");
+    return;
+  }
+  try {
+    micStream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } });
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const src = ctx.createMediaStreamSource(micStream);
+    analyser = ctx.createAnalyser();
+    analyser.fftSize = 512; analyser.smoothingTimeConstant = 0.75;
+    src.connect(analyser);
+    freq = new Uint8Array(analyser.frequencyBinCount);
+    micOn = true;
+    $("micBtn").setAttribute("aria-pressed", "true");
+  } catch (e) {
+    $("micBtn").textContent = "Mic blocked";
+  }
+}
+$("micBtn").addEventListener("click", toggleMic);
+
+/* ---------- Buttons ---------- */
+$("startBtn").addEventListener("click", () => {
+  $("gate").classList.add("gone");
+  if (widget) widget.play();
+});
+$("hideBtn").addEventListener("click", e => {
+  const on = document.body.classList.toggle("hide-ui");
+  e.target.setAttribute("aria-pressed", String(on));
+  e.target.textContent = on ? "Show player" : "Hide player";
+});
+$("fsBtn").addEventListener("click", () => {
+  if (!document.fullscreenElement) document.documentElement.requestFullscreen?.();
+  else document.exitFullscreen?.();
+});
+
+/* ---------- Light show ---------- */
+const canvas = $("c"), g = canvas.getContext("2d");
+let W, H, DPR;
+function resize() {
+  DPR = Math.min(window.devicePixelRatio || 1, 2);
+  W = canvas.width = innerWidth * DPR; H = canvas.height = innerHeight * DPR;
+}
+addEventListener("resize", resize); resize();
+
+const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
+const petals = Array.from({ length: 70 }, () => newPetal(true));
+function newPetal(anywhere) {
+  return {
+    x: Math.random(), y: anywhere ? Math.random() : 1.1,
+    s: 4 + Math.random() * 10, r: Math.random() * 6.28,
+    vr: (Math.random() - .5) * .03, vy: .0006 + Math.random() * .0014,
+    sway: Math.random() * 6.28, hueShift: Math.random()
+  };
+}
+
+let bass = 0, mid = 0, high = 0, energy = 0, t = 0;
+
+function readLevels() {
+  if (micOn && analyser) {
+    analyser.getByteFrequencyData(freq);
+    const avg = (a, b) => { let s = 0; for (let i = a; i < b; i++) s += freq[i]; return s / (b - a) / 255; };
+    return [avg(1, 8), avg(8, 50), avg(50, 160)];
+  }
+  if (!playing) return [0.05, 0.04, 0.03];
+  // Auto mode: a heartbeat-style pulse at ~96 bpm with a little drift
+  const beat = (t * 1.6) % 1;
+  const thump = Math.exp(-beat * 7) + 0.5 * Math.exp(-((beat - 0.32 + 1) % 1) * 9);
+  return [0.25 + 0.55 * thump, 0.35 + 0.2 * Math.sin(t * 0.7), 0.3 + 0.2 * Math.sin(t * 1.9)];
+}
+
+function hsl(h, s, l, a) { return `hsla(${h},${s}%,${l}%,${a})`; }
+
+function drawRose(cx, cy, R) {
+  g.save();
+  g.translate(cx, cy);
+  g.globalCompositeOperation = "lighter";
+  const layers = 6;
+  for (let L = layers; L >= 1; L--) {
+    const k = L / layers;
+    const rad = R * (0.25 + 0.75 * k) * (1 + bass * 0.18 * k);
+    const n = 5 + (L % 3);
+    const rot = t * (0.08 + 0.05 * (layers - L)) * (L % 2 ? 1 : -1);
+    const hue = (L % 2 ? pal.a : pal.b);
+    g.beginPath();
+    for (let i = 0; i <= 360; i++) {
+      const th = i * Math.PI / 180;
+      const r = rad * (0.55 + 0.45 * Math.abs(Math.cos(n / 2 * th + rot)));
+      const x = r * Math.cos(th), y = r * Math.sin(th);
+      i ? g.lineTo(x, y) : g.moveTo(x, y);
+    }
+    g.closePath();
+    const grad = g.createRadialGradient(0, 0, 0, 0, 0, rad);
+    grad.addColorStop(0, hsl(hue, 90, 60 + 15 * mid, 0.0));
+    grad.addColorStop(0.6, hsl(hue, 85, 40 + 20 * bass, 0.10 + 0.12 * energy));
+    grad.addColorStop(1, hsl(hue, 90, 55 + 20 * high, 0.22 + 0.25 * energy));
+    g.fillStyle = grad; g.fill();
+    g.lineWidth = DPR * (0.8 + 1.5 * high);
+    g.strokeStyle = hsl(hue, 95, 65, 0.25 + 0.4 * energy);
+    g.stroke();
+  }
+  // glowing heart of the rose
+  const core = g.createRadialGradient(0, 0, 0, 0, 0, R * 0.35);
+  core.addColorStop(0, hsl(pal.a, 100, 85, 0.5 + 0.5 * bass));
+  core.addColorStop(1, hsl(pal.a, 100, 50, 0));
+  g.fillStyle = core;
+  g.beginPath(); g.arc(0, 0, R * 0.35, 0, 6.29); g.fill();
+  g.restore();
+}
+
+function drawBeams(cx, cy, R) {
+  g.save(); g.translate(cx, cy); g.globalCompositeOperation = "lighter";
+  const count = 8;
+  for (let i = 0; i < count; i++) {
+    const ang = t * 0.15 + i * (Math.PI * 2 / count);
+    g.rotate(Math.PI * 2 / count);
+    const len = Math.max(W, H);
+    const grad = g.createLinearGradient(0, 0, len, 0);
+    grad.addColorStop(0, hsl(i % 2 ? pal.a : pal.b, 90, 55, 0.10 * mid + 0.02));
+    grad.addColorStop(1, hsl(pal.b, 90, 40, 0));
+    g.fillStyle = grad;
+    const spread = 0.05 + 0.06 * mid + 0.02 * Math.sin(ang * 3);
+    g.beginPath(); g.moveTo(0, 0);
+    g.lineTo(len, -len * spread); g.lineTo(len, len * spread); g.closePath(); g.fill();
+  }
+  g.restore();
+}
+
+function drawPetals() {
+  g.save(); g.globalCompositeOperation = "lighter";
+  for (let i = 0; i < petals.length; i++) {
+    const p = petals[i];
+    p.y -= p.vy * (1 + energy * 3);
+    p.sway += 0.01; p.r += p.vr * (1 + high * 4);
+    if (p.y < -0.1) petals[i] = newPetal(false);
+    const x = (p.x + Math.sin(p.sway) * 0.02) * W, y = p.y * H;
+    const s = p.s * DPR * (1 + bass * 0.6);
+    g.save(); g.translate(x, y); g.rotate(p.r);
+    g.fillStyle = hsl(p.hueShift > .5 ? pal.a : pal.b, 85, 55 + 20 * high, 0.35 + 0.4 * energy);
+    g.beginPath(); g.ellipse(0, 0, s, s * 0.55, 0, 0, 6.29); g.fill();
+    g.restore();
+  }
+  g.restore();
+}
+
+function frame() {
+  t += reduceMotion ? 0.004 : 0.016;
+  const [b, m, h] = readLevels();
+  bass += (b - bass) * 0.35; mid += (m - mid) * 0.15; high += (h - high) * 0.25;
+  energy = Math.min(1, (bass + mid + high) / 1.6);
+
+  // background wash, slightly transparent for trails
+  g.globalCompositeOperation = "source-over";
+  const bg = g.createRadialGradient(W / 2, H * 0.45, 0, W / 2, H * 0.45, Math.max(W, H) * 0.75);
+  bg.addColorStop(0, hsl(pal.b, 60, 6 + 10 * bass, 0.35));
+  bg.addColorStop(1, "rgba(20,6,11,0.45)");
+  g.fillStyle = bg; g.fillRect(0, 0, W, H);
+
+  const cx = W / 2, cy = H * 0.42, R = Math.min(W, H) * 0.26;
+  if (!reduceMotion) drawBeams(cx, cy, R);
+  drawRose(cx, cy, R);
+  if (!reduceMotion) drawPetals();
+  requestAnimationFrame(frame);
+}
+g.fillStyle = "#14060b"; g.fillRect(0, 0, W, H);
+frame();
+</script>
+</body>
+</html>
